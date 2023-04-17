@@ -9,6 +9,18 @@ from ...util.model import BenchmarkModel
 from torchbenchmark.tasks import OTHER
 
 
+from torch._dynamo import allow_in_graph
+from functools import wraps
+
+def traceable(f):
+    f = allow_in_graph(f)
+
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        return f(*args, **kwargs)
+
+    return wrapper
+
 def compute_norms(sample_grads):
     batch_size = sample_grads[0].shape[0]
     norms = [sample_grad.view(batch_size, -1).norm(2, dim=-1) for sample_grad in sample_grads]
@@ -84,7 +96,9 @@ class Model(BenchmarkModel):
             loss = self.criterion(pred, target)
             return loss
 
-        sample_grads = vmap(grad(compute_loss), (None, None, 0, 0))(params, buffers, images, targets)
+        fn = vmap(grad(compute_loss), (None, None, 0, 0))
+        fn = torch.compile(traceable(fn))
+        sample_grads = fn(params, buffers, images, targets)
 
         for grad_sample, weight in zip(sample_grads, model.parameters()):
             weight.grad_sample = grad_sample.detach()
