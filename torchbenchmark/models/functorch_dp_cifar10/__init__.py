@@ -7,7 +7,7 @@ from typing import Tuple
 
 from ...util.model import BenchmarkModel
 from torchbenchmark.tasks import OTHER
-
+from torch.utils import benchmark
 
 from torch._dynamo import allow_in_graph
 from functools import wraps
@@ -83,22 +83,49 @@ class Model(BenchmarkModel):
 
     def train(self):
         model = self.model
-        model.train()
+        # model.train()
+        model.eval()  # For benchmarking
+
         fnet, params, buffers = make_functional_with_buffers(self.model)
 
         (images, ) = self.example_inputs
         targets = self.example_target
 
         def compute_loss(params, buffers, image, target):
+            torch.manual_seed(42)
             image = image.unsqueeze(0)
             target = target.unsqueeze(0)
             pred = fnet(params, buffers, image)
             loss = self.criterion(pred, target)
             return loss
 
+        results = []
         fn = vmap(grad(compute_loss), (None, None, 0, 0))
-        fn = torch.compile(traceable(fn))
-        sample_grads = fn(params, buffers, images, targets)
+        # Warm-up
+        expected = fn(params, buffers, images, targets)
+        sample_grads = expected
+
+        opt_fn = torch.compile(traceable(fn))
+        actual = opt_fn(params, buffers, images, targets)
+        torch.testing.assert_close(actual, expected)
+
+        t0 = benchmark.Timer(
+            stmt='fn(params, buffers, images, targets)',
+            globals={'fn': fn, 'params': params, 'buffers': buffers, 'images': images,
+                     'targets': targets},
+            description='eager',
+            sub_label='cifar-10',)
+        results.append(t0.timeit(number=2))
+
+        t1 = benchmark.Timer(
+            stmt='opt_fn(params, buffers, images, targets)',
+            globals={'opt_fn': opt_fn, 'params': params, 'buffers': buffers, 'images': images,
+                     'targets': targets},
+            description='compile',
+            sub_label='cifar-10',)
+        results.append(t1.timeit(number=2))
+
+        benchmark.Compare(results).print()
 
         for grad_sample, weight in zip(sample_grads, model.parameters()):
             weight.grad_sample = grad_sample.detach()

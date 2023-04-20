@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.func import vmap, jacfwd, jacrev
 from .util import BenchmarkCase
+from torch.utils import benchmark
 
 # batched hessians of fully connected layers is a popular quantity
 # in physics-related models.
@@ -22,8 +23,7 @@ def traceable(f):
     return wrapper
 
 class VmapHessianFC(BenchmarkCase):
-    def __init__(self):
-        device = 'cpu'
+    def __init__(self, device='cpu'):
         D1 = 2  # x, y
         D2 = 3  # u, v, p
         B = 10
@@ -64,5 +64,27 @@ class VmapHessianFC(BenchmarkCase):
             in_dims=(None, 0),
         )
 
-        fn = torch.compile(traceable(fn))
+        expected = fn(params_and_buffers, self.x)
+
+        opt_fn = torch.compile(traceable(fn))
+        actual = opt_fn(params_and_buffers, self.x)
+        torch.testing.assert_close(actual, expected)
+
+        results = []
+        t0 = benchmark.Timer(
+            stmt='fn(params_and_buffers, x)',
+            globals={'fn': fn, 'params_and_buffers': params_and_buffers, 'x': self.x},
+            description='eager',
+            sub_label='vmap-hessian',)
+        results.append(t0.timeit(number=2))
+
+        t1 = benchmark.Timer(
+            stmt='opt_fn(params_and_buffers, x)',
+            globals={'opt_fn': opt_fn, 'params_and_buffers': params_and_buffers, 'x': self.x},
+            description='compile',
+            sub_label='vmap-hessian',)
+        results.append(t1.timeit(number=2))
+
+        benchmark.Compare(results).print()
+
         hessian, pred = fn(params_and_buffers, self.x)

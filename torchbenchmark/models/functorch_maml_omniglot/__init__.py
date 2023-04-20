@@ -14,6 +14,7 @@ import copy
 
 from torch._dynamo import allow_in_graph
 from functools import wraps
+from torch.utils import benchmark
 
 # def make_functional_with_buffers(mod, disable_autograd_tracking=False):
 #     params_dict = dict(mod.named_parameters())
@@ -150,12 +151,37 @@ class Model(BenchmarkModel):
 
             return qry_loss, qry_acc
 
+        results = []
         # In parallel, trains one model per task. There is a support (x, y)
         # for each task and a query (x, y) for each task.
         # compute_loss_for_task = functools.partial(loss_for_task, net, n_inner_iter)
         fn = vmap(loss_for_task_compliant, in_dims=(None, None, 0, 0, 0, 0))
-        fn = torch.compile(traceable(fn))
-        qry_losses, qry_accs = fn(n_inner_iter, params_and_buffers, x_spt, y_spt, x_qry, y_qry)
+        # Warm-up
+        expected = fn(n_inner_iter, params_and_buffers, x_spt, y_spt, x_qry, y_qry)
+        qry_losses, _ = expected
+        
+        t0 = benchmark.Timer(
+            stmt='fn(n_inner_iter, params_and_buffers, x_spt, y_spt, x_qry, y_qry)',
+            globals={'fn': fn, 'n_inner_iter': n_inner_iter, 'params_and_buffers': params_and_buffers, 'x_spt': x_spt,
+                     'y_spt': y_spt, 'x_qry': x_qry, 'y_qry': y_qry},
+            description='eager',
+            sub_label='omniglot',)
+        results.append(t0.timeit(number=2))
+        
+
+        opt_fn = torch.compile(traceable(fn))
+        # Warm-up
+        actual = opt_fn(n_inner_iter, params_and_buffers, x_spt, y_spt, x_qry, y_qry)
+        torch.testing.assert_close(actual, expected, rtol=0.01, atol=0.01)
+        t1 = benchmark.Timer(
+            stmt='opt_fn(n_inner_iter, params_and_buffers, x_spt, y_spt, x_qry, y_qry)',
+            globals={'opt_fn': opt_fn, 'n_inner_iter': n_inner_iter, 'params_and_buffers': params_and_buffers, 'x_spt': x_spt,
+                     'y_spt': y_spt, 'x_qry': x_qry, 'y_qry': y_qry},
+            description='compile',
+            sub_label='omniglot',)
+        results.append(t1.timeit(number=2))
+
+        benchmark.Compare(results).print()
 
         # Compute the maml loss by summing together the returned losses.
         qry_losses.sum().backward()
