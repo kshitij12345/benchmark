@@ -26,7 +26,7 @@ class VmapHessianFC(BenchmarkCase):
     def __init__(self, device='cpu'):
         D1 = 2  # x, y
         D2 = 3  # u, v, p
-        B = 10
+        B = 10000
         x = torch.randn(B, D1).to(device)
 
         model = nn.Sequential(
