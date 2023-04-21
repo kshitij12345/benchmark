@@ -1,0 +1,37 @@
+CUDA-Performance : A5000
+
+OMNIGLOT:
+[----------------  ----------------]
+                |  eager  |  compile
+1 threads: -------------------------
+      omniglot  |  161.2  |   140.7 
+
+Times are in milliseconds (ms).
+
+defaultdict(<class 'collections.Counter'>, {'frames': Counter({'total': 1, 'ok': 1}),
+                                            'stats': Counter({'calls_captured': 3, 'unique_graphs': 1}),
+                                            'aot_autograd': Counter({'total': 1, 'ok': 1})})
+
+VmapHessian
+[------------------  ------------------]
+                    |  eager  |  compile
+1 threads: -----------------------------
+      vmap-hessian  |   38.4  |    30.6 
+
+Times are in milliseconds (ms).
+
+defaultdict(<class 'collections.Counter'>, {'frames': Counter({'total': 1, 'ok': 1}), 
+                                            'stats': Counter({'calls_captured': 3, 'unique_graphs': 1}),
+                                            'aot_autograd': Counter({'total': 1, 'ok': 1})})
+
+Cifar-10
+[----------------  ----------------]
+                |  eager  |  compile
+1 threads: -------------------------
+      cifar-10  |   84.7  |    72.9 
+
+Times are in milliseconds (ms).
+
+defaultdict(<class 'collections.Counter'>, {'frames': Counter({'total': 1, 'ok': 1}),
+                                            'stats': Counter({'calls_captured': 63, 'unique_graphs': 1}),
+                                            'aot_autograd': Counter({'total': 1, 'ok': 1})})
